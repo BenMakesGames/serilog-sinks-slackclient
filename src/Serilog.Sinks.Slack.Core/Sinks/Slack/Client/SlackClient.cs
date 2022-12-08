@@ -5,63 +5,62 @@ using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 
-namespace Serilog.Sinks.Slack.Core.Sinks.Slack.Client
+namespace Serilog.Sinks.Slack.Core.Sinks.Slack.Client;
+
+public class SlackClient
 {
-    public class SlackClient
+    private readonly Uri _webhookUrl;
+    private readonly HttpClient _httpClient = new HttpClient();
+
+    private const string ValidHost = "hooks.slack.com";
+
+    /// <summary>
+    /// Returns the HTTP Client's current Timeout value.
+    /// </summary>
+    internal TimeSpan TimeoutMs => _httpClient.Timeout;
+
+    public SlackClient(string webhookUrl, int timeoutSeconds = 100)
     {
-        private readonly Uri _webhookUrl;
-        private readonly HttpClient _httpClient = new HttpClient();
+        if (!Uri.TryCreate(webhookUrl, UriKind.Absolute, out _webhookUrl))
+            throw new ArgumentException("Please enter a valid Slack webhook url");
 
-        private const string ValidHost = "hooks.slack.com";
+        if (_webhookUrl.Host != ValidHost)
+            throw new ArgumentException("Please enter a valid Slack webhook url");
 
-        /// <summary>
-        /// Returns the HTTP Client's current Timeout value.
-        /// </summary>
-        internal TimeSpan TimeoutMs => _httpClient.Timeout;
+        _httpClient.Timeout = new TimeSpan(0, 0, 0, timeoutSeconds);
+    }
 
-        public SlackClient(string webhookUrl, int timeoutSeconds = 100)
+    public async Task PostAsync(SlackMessage message, IEnumerable<string> channels)
+    {
+        foreach (var channel in channels)
+            await PostAsync(message, channel);
+    }
+
+    public async Task<HttpResponseMessage> PostAsync(
+        SlackMessage message,
+        string channel = null)
+    {
+        var payload = new
         {
-            if (!Uri.TryCreate(webhookUrl, UriKind.Absolute, out _webhookUrl))
-                throw new ArgumentException("Please enter a valid Slack webhook url");
+            text = message.Text,
+            channel,
+            username = message.Username,
+        };
 
-            if (_webhookUrl.Host != ValidHost)
-                throw new ArgumentException("Please enter a valid Slack webhook url");
+        var serializedPayload = JsonConvert.SerializeObject(payload);
+        var response = await _httpClient.PostAsync(_webhookUrl,
+            new StringContent(serializedPayload, Encoding.UTF8, "application/json"));
 
-            _httpClient.Timeout = new TimeSpan(0, 0, 0, timeoutSeconds);
-        }
-        
-        public async Task PostAsync(SlackMessage message, IEnumerable<string> channels)
-        {
-            foreach (var channel in channels)
-                await PostAsync(message, channel);
-        }
+        return response;
+    }
 
-        public async Task<HttpResponseMessage> PostAsync(
-            SlackMessage message, 
-            string channel = null)
-        {
-            var payload = new
-            {
-                text = message.Text,
-                channel,
-                username = message.Username,
-            };
+    public async Task<HttpResponseMessage> PostAsync(
+        string message,
+        string channel = null)
+    {
+        var response = await _httpClient.PostAsync(_webhookUrl,
+            new StringContent(message, Encoding.UTF8, "application/json"));
 
-            var serializedPayload = JsonConvert.SerializeObject(payload);
-            var response = await _httpClient.PostAsync(_webhookUrl,
-                new StringContent(serializedPayload, Encoding.UTF8, "application/json"));
-
-            return response;
-        }
-
-        public async Task<HttpResponseMessage> PostAsync(
-            string message,
-            string channel = null)
-        {
-            var response = await _httpClient.PostAsync(_webhookUrl,
-                new StringContent(message, Encoding.UTF8, "application/json"));
-
-            return response;
-        }
+        return response;
     }
 }
